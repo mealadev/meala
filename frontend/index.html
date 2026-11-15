@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meala — Multi-User UAV Flight Log & Telemetry Hub</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 64 64" width="28" height="28" fill="none">
+        <polygon points="32,4 56,18 56,46 32,60 8,46 8,18" stroke="#F59E0B" stroke-width="4"/>
+        <polygon points="32,16 46,24 46,40 32,48 18,40 18,24" stroke="#F59E0B" stroke-width="2.5"/>
+        <circle cx="32" cy="32" r="4" fill="#F59E0B"/>
+      </svg>
+      <span>Meala</span>
+      <span class="badge">Self-Hosted Fleet Hub</span>
+    </div>
+    <div class="topbar-actions">
+      <span id="serverStatus" class="status-pill">Connecting...</span>
+      <button id="openUploadBtn" class="btn btn-primary">+ Upload Flight Log</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Left Sidebar: SQL Filter Builder & Flight List -->
+    <aside class="sidebar">
+      <div class="panel">
+        <h3>SQL Flight Filter</h3>
+        <input type="text" id="filterSearch" placeholder="Search vehicle, battery, pilot, notes..." />
+        <div class="filter-row">
+          <select id="filterStack">
+            <option value="">All Stacks</option>
+            <option value="ArduPilot">ArduPilot</option>
+            <option value="PX4">PX4</option>
+            <option value="INAV">INAV</option>
+          </select>
+          <input type="number" id="filterMaxTemp" placeholder="Max Temp (°C)" step="1" />
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="filterAlerts" /> Only Alerts (Voltage Sag / High Vibe)
+        </label>
+        <div class="filter-actions">
+          <button id="applyFiltersBtn" class="btn btn-primary btn-sm">Run Query</button>
+          <button id="resetFiltersBtn" class="btn btn-secondary btn-sm">Reset</button>
+        </div>
+      </div>
+
+      <div class="panel flight-list-panel">
+        <div class="panel-head">
+          <h3>Indexed Flights (<span id="flightCount">0</span>)</h3>
+          <small>Select up to 4 to overlay</small>
+        </div>
+        <div id="flightList" class="flight-list"></div>
+      </div>
+    </aside>
+
+    <!-- Main Telemetry Workspace -->
+    <section class="workspace">
+      <!-- KPI Summary Bar -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Matching Flights</span>
+          <strong id="kpiTotal">0</strong>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Alert Flights</span>
+          <strong id="kpiAlerts" class="text-red">0</strong>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Min Fleet Temp</span>
+          <strong id="kpiMinTemp">—</strong>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Active Overlay</span>
+          <strong id="kpiSelected">0 / 4</strong>
+        </div>
+      </div>
+
+      <!-- Multi-Log Overlay Charts -->
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Cross-Stack Telemetry Overlay (Parquet Stream)</h3>
+          <div class="selected-chips" id="selectedChips"></div>
+        </div>
+        <div class="charts-grid">
+          <div class="chart-box">
+            <h4>Battery Voltage (V)</h4>
+            <canvas id="vbatChart"></canvas>
+          </div>
+          <div class="chart-box">
+            <h4>Climb Rate (m/s)</h4>
+            <canvas id="climbChart"></canvas>
+          </div>
+          <div class="chart-box">
+            <h4>Z-Axis Vibration (m/s²)</h4>
+            <canvas id="vibeChart"></canvas>
+          </div>
+          <div class="chart-box">
+            <h4>Altitude AMSL (m)</h4>
+            <canvas id="altChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Row: GPS Ground Tracks + Controller Params -->
+      <div class="bottom-grid">
+        <div class="panel">
+          <h3>Normalized GPS Flight Tracks</h3>
+          <div id="flightMap"></div>
+        </div>
+        <div class="panel">
+          <h3>Controller Parameters &amp; Flight Notes</h3>
+          <div id="paramsInspector" class="params-inspector">
+            <p class="muted">Select one or more flights on the left to compare firmware parameters and pilot notes.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Upload Modal -->
+  <div id="uploadModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>Ingest Flight Log</h3>
+        <button id="closeUploadBtn" class="close-btn">✕</button>
+      </div>
+      <form id="uploadForm">
+        <label>Flight Log File (<code>.bin</code>, <code>.ulg</code>, <code>.tlog</code>, <code>.bbl</code>, <code>.csv</code>)
+          <input type="file" name="file" required />
+        </label>
+        <div class="filter-row">
+          <label>Vehicle UID <input type="text" name="vehicle_uid" value="TailSitter-VTOL-01" required /></label>
+          <label>Battery UID <input type="text" name="battery_uid" value="BAT-6S-012" /></label>
+        </div>
+        <div class="filter-row">
+          <label>Autopilot Stack
+            <select name="autopilot_type">
+              <option value="ArduPilot">ArduPilot</option>
+              <option value="PX4">PX4</option>
+              <option value="INAV">INAV</option>
+            </select>
+          </label>
+          <label>Pilot <input type="text" name="pilot" value="Brandon H." /></label>
+        </div>
+        <label>Ambient Temp °C (leave blank to auto-fetch historical weather)
+          <input type="number" name="ambient_temp_c" step="0.1" placeholder="Auto from Open-Meteo" />
+        </label>
+        <label>Flight / Tuning Notes
+          <textarea name="notes" rows="2" placeholder="Describe flight test conditions or anomalies..."></textarea>
+        </label>
+        <button type="submit" class="btn btn-primary full-width">Upload &amp; Normalize to Parquet</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
