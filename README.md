@@ -9,17 +9,23 @@ Part of the [Meala](https://meala.dev) ecosystem (`github.com/mealadev`).
 ## Architecture
 
 * **`meala-postgres` (PostgreSQL 16):** Stores flight summary rows, anomaly flags, historical takeoff weather, and firmware controller parameters (`JSONB`).
-* **`meala-api` (FastAPI + Python 3.12):** Asynchronous background ingestion worker that parses ArduPilot (`.bin`, `.tlog`), PX4 (`.ulg`), and `.csv` logs via `pymavlink`/`pyulog`, normalizes them to Snappy-compressed Apache Parquet files, and enriches takeoff weather via Open-Meteo.
-* **`meala-web` (Nginx + Multi-Log Dashboard):** Interactive SQL filter sidebar, 4-flight cross-stack overlay charts (Voltage, Climb Rate, Z-Axis Vibration, Altitude), Leaflet GPS ground tracks, and parameter inspector.
+* **`meala-api` (`ghcr.io/mealadev/meala-api`):** FastAPI + Python 3.12 asynchronous ingestion worker that parses ArduPilot (`.bin`, `.tlog`), PX4 (`.ulg`), and `.csv` logs via `pymavlink`/`pyulog`, normalizes them to Snappy-compressed Apache Parquet files, and enriches takeoff weather via Open-Meteo.
+* **`meala-web` (`ghcr.io/mealadev/meala-web`):** Nginx + Multi-Log Dashboard with an interactive SQL filter sidebar, 4-flight cross-stack overlay charts (Voltage, Climb Rate, Z-Axis Vibration, Altitude), Leaflet GPS ground tracks, and parameter inspector.
 
 ---
 
-## Quickstart (Docker Compose)
+## Quickstart (Prebuilt GHCR Images)
 
 ```bash
 git clone https://github.com/mealadev/meala.git
 cd meala
 cp .env.example .env
+docker compose up -d
+```
+
+To build containers locally from source instead of pulling from `ghcr.io`:
+
+```bash
 docker compose up --build -d
 ```
 
